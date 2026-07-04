@@ -19,3 +19,6 @@ fix_panel6.py
 .vscode/
 .idea/
 .DS_Store
+
+# Compiler specific builds
+build_*/

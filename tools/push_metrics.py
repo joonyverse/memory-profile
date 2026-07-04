@@ -37,7 +37,7 @@ from pathlib import Path
 #  InfluxDB Backend
 # ============================================================================
 
-def to_influxdb_line_protocol(data: dict) -> str:
+def to_influxdb_line_protocol(data: dict, compiler: str = 'gcc', arch: str = 'x86_64') -> str:
     """
     parse_pahole.py JSON → InfluxDB Line Protocol 변환.
 
@@ -64,7 +64,9 @@ def to_influxdb_line_protocol(data: dict) -> str:
         tags = (
             f'struct_name={_escape_tag(s["struct_name"])},'
             f'project={_escape_tag(project)},'
-            f'commit={_escape_tag(commit)}'
+            f'commit={_escape_tag(commit)},'
+            f'compiler={_escape_tag(compiler)},'
+            f'arch={_escape_tag(arch)}'
         )
 
         # 필드 (값, 숫자)
@@ -245,6 +247,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         '--dry-run', action='store_true',
         help='변환 결과만 출력, 실제 전송하지 않음',
     )
+    p.add_argument(
+        '--compiler', default='gcc',
+        help='컴파일러 이름 (기본: gcc)',
+    )
+    p.add_argument(
+        '--arch', default='x86_64',
+        help='아키텍처 이름 (기본: x86_64)',
+    )
 
     # InfluxDB 옵션
     influx = p.add_argument_group('InfluxDB options')
@@ -300,7 +310,7 @@ def main():
 
     # 백엔드별 처리
     if args.backend == 'influxdb':
-        payload = to_influxdb_line_protocol(data)
+        payload = to_influxdb_line_protocol(data, args.compiler, args.arch)
         if args.dry_run:
             print('--- InfluxDB Line Protocol ---')
             print(payload)

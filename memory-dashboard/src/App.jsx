@@ -17,6 +17,8 @@ const queryApi = client.getQueryApi(org);
 function App() {
   const [loading, setLoading] = useState(true);
   const [expandedStructs, setExpandedStructs] = useState(new Set());
+  const [compiler, setCompiler] = useState('gcc');
+  const [arch, setArch] = useState('x86_64');
   const [data, setData] = useState({
     structs: [],
     totalWaste: 0,
@@ -40,10 +42,13 @@ function App() {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        setLoading(true);
         const query = `
           from(bucket: "${bucket}")
             |> range(start: -30d)
             |> filter(fn: (r) => r._measurement == "struct_metrics")
+            |> filter(fn: (r) => r.compiler == "${compiler}")
+            |> filter(fn: (r) => r.arch == "${arch}")
             |> filter(fn: (r) => r._field == "waste_pct" or r._field == "sum_members" or r._field == "sum_holes" or r._field == "padding_end" or r._field == "layout_json" or r._field == "total_size")
             |> group(columns: ["struct_name", "commit", "_field"])
             |> last()
@@ -87,7 +92,7 @@ function App() {
     };
 
     fetchData();
-  }, []);
+  }, [compiler, arch]);
 
   if (loading) {
     return (
@@ -105,8 +110,34 @@ function App() {
           <Database size={28} className="icon-primary" />
           <h1>Memory Profile <span className="subtitle">— Pahole Analysis</span></h1>
         </div>
-        <div className="header-status">
-          <span className="status-dot"></span> Live Data
+        <div className="header-controls">
+          <div className="control-group">
+            <label htmlFor="compiler-select">Compiler</label>
+            <select 
+              id="compiler-select" 
+              value={compiler} 
+              onChange={(e) => setCompiler(e.target.value)}
+              className="select-control"
+            >
+              <option value="gcc">GCC</option>
+              <option value="clang">Clang</option>
+            </select>
+          </div>
+          <div className="control-group">
+            <label htmlFor="arch-select">Architecture</label>
+            <select 
+              id="arch-select" 
+              value={arch} 
+              onChange={(e) => setArch(e.target.value)}
+              className="select-control"
+            >
+              <option value="x86_64">x86_64</option>
+              <option value="arm64">ARM64</option>
+            </select>
+          </div>
+          <div className="header-status">
+            <span className="status-dot"></span> Live Data
+          </div>
         </div>
       </header>
 
