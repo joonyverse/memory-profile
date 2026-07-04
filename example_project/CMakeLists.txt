@@ -48,6 +48,21 @@ add_custom_target(trace-dynamic
     COMMENT "Running GDB cell setup dynamic tracing (local)..."
 )
 
+# Target for struct-aware dynamic heap allocation tracking
+# malloc/operator new를 후킹하여 할당 크기 ↔ 구조체 크기를 매칭합니다.
+add_custom_target(trace-dynamic-detailed
+    COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/../tools/memory_analyzer/auto_scan.sh" "${SCAN_SRC_DIR}" "structs_list.txt"
+    COMMAND gdb -batch
+        -ex "source ${CMAKE_CURRENT_SOURCE_DIR}/../tools/memory_analyzer/heap_tracker.py"
+        -ex "run"
+        -ex "quit"
+        --args ./memory_profile_example
+        > heap_alloc_report.txt
+    DEPENDS memory_profile_example
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    COMMENT "Running struct-aware dynamic heap allocation tracking..."
+)
+
 # ============================================================
 # Multi-Architecture / Multi-Server Remote Profiling
 # ============================================================
