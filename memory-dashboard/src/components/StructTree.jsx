@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { CornerDownRight, ChevronRight, ChevronDown } from 'lucide-react';
+import { CornerDownRight, ChevronRight, ChevronDown, Sparkles, Copy, Check, ArrowLeftRight } from 'lucide-react';
+import { packLayout, generateCppCode } from '../utils/packer';
 
 const TreeNode = ({ item, depth, maxOffset }) => {
   const [expanded, setExpanded] = useState(false);
@@ -125,8 +126,11 @@ const TreeNode = ({ item, depth, maxOffset }) => {
   );
 };
 
-const StructTree = ({ struct }) => {
+const StructTree = ({ struct, onCompare }) => {
   if (!struct) return null;
+
+  const [optimize, setOptimize] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   let layout = [];
   try {
@@ -139,27 +143,101 @@ const StructTree = ({ struct }) => {
 
   const maxOffset = struct.totalSize || (layout.length > 0 ? layout[layout.length - 1].offset + layout[layout.length - 1].size : 100);
 
+  // Compute optimized layout
+  const { layout: optimizedLayout, totalSize: optimizedSize } = packLayout(layout);
+  const cppCode = generateCppCode(struct.name, optimizedLayout);
+  
+  // Calculate optimized waste percentage (usually 0%)
+  const activeOptimized = optimizedLayout.filter(x => x.type !== 'hole' && x.type !== 'padding');
+  const optimizedWastedBytes = optimizedLayout
+    .filter(x => x.type === 'hole' || x.type === 'padding')
+    .reduce((acc, x) => acc + x.size, 0);
+  const optimizedWastePct = optimizedSize > 0 ? (optimizedWastedBytes / optimizedSize * 100).toFixed(1) : 0;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(cppCode);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <div className="inline-struct-tree" onClick={e => e.stopPropagation()}>
-      <div className="code-view">
-        <div className="code-header-top">
-          <span style={{ color: 'var(--accent-purple)' }}>struct</span> {struct.name} {'{'}
+      <div className="inspector-controls">
+        <button 
+          onClick={() => setOptimize(!optimize)} 
+          className={`btn-optimize ${optimize ? 'active' : ''}`}
+        >
+          <Sparkles size={14} />
+          {optimize ? 'Show Original Layout' : 'Optimize Memory Layout (Auto-Pack)'}
+        </button>
+        {!optimize && onCompare && (
+          <button 
+            onClick={() => onCompare(struct.name)} 
+            className="btn-compare-layouts"
+          >
+            <ArrowLeftRight size={14} />
+            Compare Compiler/Arch Layouts (Diff)
+          </button>
+        )}
+      </div>
+
+      <div className={`layout-comparison ${optimize ? 'optimized-view' : ''}`}>
+        <div className="code-view original-pane">
+          <div className="pane-header">Original Layout</div>
+          <div className="code-header-top">
+            <span style={{ color: 'var(--accent-purple)' }}>struct</span> {struct.name} {'{'}
+          </div>
+          
+          <div className="code-header">
+            <span className="code-col-decl">Declaration</span>
+            <span className="code-col-offset">Offset</span>
+            <span className="code-col-size">Size</span>
+          </div>
+          
+          <div className="code-body">
+            {layout.map((item, idx) => (
+              <TreeNode key={`root-${idx}`} item={item} depth={0} maxOffset={maxOffset} />
+            ))}
+          </div>
+          <div className="code-footer">
+            {'}'}; <span className="comment">/* size: {struct.totalSize} bytes, {struct.wastePct}% waste */</span>
+          </div>
         </div>
-        
-        <div className="code-header">
-          <span className="code-col-decl">Declaration</span>
-          <span className="code-col-offset">Offset</span>
-          <span className="code-col-size">Size</span>
-        </div>
-        
-        <div className="code-body">
-          {layout.map((item, idx) => (
-            <TreeNode key={`root-${idx}`} item={item} depth={0} maxOffset={maxOffset} />
-          ))}
-        </div>
-        <div className="code-footer">
-          {'}'}; <span className="comment">/* size: {struct.totalSize} bytes, {struct.wastePct}% waste */</span>
-        </div>
+
+        {optimize && (
+          <div className="code-view optimized-pane">
+            <div className="pane-header">Optimized Suggested Layout</div>
+            <div className="code-header-top">
+              <span style={{ color: 'var(--accent-purple)' }}>struct</span> {struct.name} {'{'}
+            </div>
+            
+            <div className="code-header">
+              <span className="code-col-decl">Declaration</span>
+              <span className="code-col-offset">Offset</span>
+              <span className="code-col-size">Size</span>
+            </div>
+            
+            <div className="code-body">
+              {optimizedLayout.map((item, idx) => (
+                <TreeNode key={`opt-${idx}`} item={item} depth={0} maxOffset={optimizedSize} />
+              ))}
+            </div>
+            <div className="code-footer">
+              {'}'}; <span className="comment">/* size: {optimizedSize} bytes ({struct.totalSize - optimizedSize}B saved), {optimizedWastePct}% waste */</span>
+            </div>
+            
+            <div className="optimized-code-box">
+              <div className="code-box-header">
+                <span>Optimized C++ Code</span>
+                <button onClick={handleCopy} className="btn-copy">
+                  {copied ? <Check size={14} className="icon-green" /> : <Copy size={14} />}
+                  {copied ? 'Copied!' : 'Copy Code'}
+                </button>
+              </div>
+              <pre className="cpp-code-block"><code>{cppCode}</code></pre>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -5,6 +5,8 @@ import StatCard from './components/StatCard';
 import WasteGauge from './components/WasteGauge';
 import SizeBreakdown from './components/SizeBreakdown';
 import StructTree from './components/StructTree';
+import LayoutDiff from './components/LayoutDiff';
+
 
 // Configure InfluxDB client to use the Vite proxy
 const token = 'dev-token-123';
@@ -19,6 +21,8 @@ function App() {
   const [expandedStructs, setExpandedStructs] = useState(new Set());
   const [compiler, setCompiler] = useState('gcc');
   const [arch, setArch] = useState('x86_64');
+  const [compareStructName, setCompareStructName] = useState(null);
+  const [compareData, setCompareData] = useState([]);
   const [data, setData] = useState({
     structs: [],
     totalWaste: 0,
@@ -38,6 +42,44 @@ function App() {
       return newSet;
     });
   };
+
+  const handleCompare = async (structName) => {
+    try {
+      setCompareStructName(structName);
+      // Fetch all configs for this struct from InfluxDB
+      const query = `
+        from(bucket: "${bucket}")
+          |> range(start: -30d)
+          |> filter(fn: (r) => r._measurement == "struct_metrics")
+          |> filter(fn: (r) => r.struct_name == "${structName}")
+          |> filter(fn: (r) => r._field == "waste_pct" or r._field == "sum_members" or r._field == "sum_holes" or r._field == "padding_end" or r._field == "layout_json" or r._field == "total_size")
+          |> group(columns: ["struct_name", "commit", "compiler", "arch", "_field"])
+          |> last()
+          |> pivot(rowKey: ["struct_name", "commit", "compiler", "arch"], columnKey: ["_field"], valueColumn: "_value")
+      `;
+      
+      const results = [];
+      for await (const { values, tableMeta } of queryApi.iterateRows(query)) {
+        const row = tableMeta.toObject(values);
+        results.push({
+          name: row.struct_name,
+          commit: row.commit,
+          compiler: row.compiler,
+          arch: row.arch,
+          wastePct: row.waste_pct || 0,
+          members: row.sum_members || 0,
+          holes: row.sum_holes || 0,
+          padding: row.padding_end || 0,
+          totalSize: row.total_size || 0,
+          layoutJson: row.layout_json || "[]"
+        });
+      }
+      setCompareData(results);
+    } catch (err) {
+      console.error("Failed to fetch compare data", err);
+    }
+  };
+
 
   useEffect(() => {
     const fetchData = async () => {
@@ -159,7 +201,7 @@ function App() {
                     <WasteGauge label={s.name} value={s.wastePct} />
                   </div>
                   <div className={`expandable-content ${expandedStructs.has(`waste-${s.name}`) ? 'expanded' : ''}`}>
-                    {expandedStructs.has(`waste-${s.name}`) && <StructTree struct={s} />}
+                    {expandedStructs.has(`waste-${s.name}`) && <StructTree struct={s} onCompare={handleCompare} />}
                   </div>
                 </div>
               ))}
@@ -180,7 +222,7 @@ function App() {
                     />
                   </div>
                   <div className={`expandable-content ${expandedStructs.has(`size-${s.name}`) ? 'expanded' : ''}`}>
-                    {expandedStructs.has(`size-${s.name}`) && <StructTree struct={s} />}
+                    {expandedStructs.has(`size-${s.name}`) && <StructTree struct={s} onCompare={handleCompare} />}
                   </div>
                 </div>
               ))}
@@ -200,6 +242,15 @@ function App() {
           </div>
         </section>
       </main>
+      {compareStructName && compareData.length > 0 && (
+        <LayoutDiff 
+          allConfigs={compareData} 
+          onClose={() => {
+            setCompareStructName(null);
+            setCompareData([]);
+          }} 
+        />
+      )}
     </div>
   );
 }
