@@ -34,7 +34,33 @@ static_assert(sizeof(ExampleCacheAlignedBuffer) % 64 == 0,
 static_assert(sizeof(ExampleComplexRecord) % 64 == 0,
     "ExampleComplexRecord size must be a multiple of 64");
 
+#include <iostream>
+#include <thread>
+#include <chrono>
+#include <vector>
+#include <cstdlib>
+
+// Simulated function to be debugged / traced by GDB
+extern "C" void complete_cell_setup(int cell_id) {
+    std::cout << "[Cell Setup] Cell " << cell_id << " setup completed!" << std::endl;
+}
+
+void simulate_vran_flow() {
+    std::vector<void*> allocated_ptrs;
+    for (int i = 1; i <= 5; ++i) {
+        // Simulate some dynamic memory allocation (heap usage changes)
+        void* ptr = malloc(i * 1024 * 1024); // 1MB, 2MB, 3MB ...
+        allocated_ptrs.push_back(ptr);
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        complete_cell_setup(i);
+    }
+    for (void* ptr : allocated_ptrs) {
+        free(ptr);
+    }
+}
+
 int main() {
     force_emit();
+    simulate_vran_flow();
     return 0;
 }

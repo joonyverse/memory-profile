@@ -1,0 +1,14 @@
+set pagination off
+set logging file cell_memory_log.txt
+set logging on
+
+break @CELL_SETUP_FUNC@
+  commands
+    silent
+    printf "=== CELL SETUP EVENT ===\n"
+    info proc mappings
+    continue
+  end
+
+run
+quit
