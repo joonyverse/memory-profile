@@ -22,3 +22,12 @@ fix_panel6.py
 
 # Compiler specific builds
 build_*/
+
+# Server environment profiles (contain IP addresses)
+# .env.example은 추적합니다 (템플릿 용도)
+.env
+.env.*
+!.env.example
+
+# Node modules
+node_modules/

@@ -1,0 +1,52 @@
+# ============================================================
+# remote_trace.gdb.in — 원격 GDB 동적 추적 스크립트 템플릿
+#
+# CMake configure_file()에 의해 @변수@가 실제 값으로 치환됩니다.
+# 이 파일을 직접 수정하지 마세요. .env 프로필을 수정하세요.
+#
+# 생성 명령: cmake .. -DENV_FILE=../.env.sapphirerapids
+# 실행 명령: make trace-dynamic-remote
+# ============================================================
+
+# --- GDB 기본 설정 ---
+set pagination off
+set confirm off
+
+# 원격 타겟 CPU 아키텍처를 자동 감지합니다.
+# ARM Grace-C1이든, Sapphire Rapids(AVX512-FP16)이든
+# gdbserver가 보내주는 Target Description XML을 기반으로
+# 레지스터 셋과 아키텍처를 자동으로 인식합니다.
+set architecture auto
+
+# --- 로그 설정 ---
+set logging file remote_cell_memory_log.txt
+set logging overwrite on
+set logging redirect off
+set logging on
+
+# --- 원격 서버 접속 ---
+# .env 프로필에서 읽어온 TARGET_IP / TARGET_PORT로 치환됩니다.
+printf "=== Connecting to remote target: @TARGET_IP@:@TARGET_PORT@ ===\n"
+target remote @TARGET_IP@:@TARGET_PORT@
+
+# --- 브레이크포인트 설정 ---
+# 셀 셋업 완료 함수에 중단점을 설정합니다.
+break @CELL_SETUP_FUNC@
+  commands
+    silent
+    printf "=== CELL SETUP EVENT ===\n"
+    printf "  Cell Setup Function: @CELL_SETUP_FUNC@\n"
+    printf "  Target Server: @TARGET_IP@:@TARGET_PORT@\n"
+
+    # 프로세스 메모리 매핑 스냅샷 (힙, 스택, mmap 영역)
+    info proc mappings
+
+    # 현재 스택 프레임의 변수 상태 덤프
+    info locals
+
+    continue
+  end
+
+# --- 실행 ---
+continue
+quit
