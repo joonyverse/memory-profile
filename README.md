@@ -1,111 +1,100 @@
-# Memory Profile
+# Memory Profile & GDB Heap Tracker
 
-C++ 구조체의 메모리 레이아웃을 `pahole`로 분석하고, 결과를 JSON으로 변환하여 대시보드와 연동하는 파이프라인. 이 저장소는 다중 파일 CMake 프로젝트에서 메모리 레이아웃 분석 파이프라인을 구축하는 실전 예제를 제공합니다.
+C++ 구조체의 DWARF 디버그 정보를 DWARF 파서 없이 GDB Python으로 분석하고, 런타임 동적 할당(malloc/new)을 후킹하여 알려진 구조체 크기와 매칭해 주는 vRAN 및 임베디드 실시간 시스템용 메모리 프로파일러 패키지입니다.
 
-## Quick Start
+기존 `pahole`의 한계(인라인 구조체, 템플릿 멤버, 동적 할당 분석 불가)를 극복하기 위해 **GDB 원격 디버깅 및 DWARF 분석 엔진**으로 마이그레이션되었습니다.
 
-```bash
-# 1. CMake 빌드
-cd example_project
-mkdir build && cd build
-cmake ..
-make
+---
 
-# 2. 파이프라인 실행 (여러 오브젝트 파일 통합 분석)
-pahole CMakeFiles/memory_profile_example.dir/src/*.o | python3 ../tools/parse_pahole.py
-```
-
-## Directory Structure
+## 📂 Directory Structure
 
 | Path | Description |
 |------|-------------|
-| `example_project/inc/` | 도메인별 구조체 헤더 정의 (`example_node.h`, `example_events.h`, `example_system.h`) |
-| `example_project/src/` | 관련 C++ 소스 파일 및 `main.cpp` |
-| `example_project/CMakeLists.txt` | 표준 CMake 빌드 설정 (디버그 심볼 `-g` 강제 적용) |
-| `tools/parse_pahole.py` | pahole 텍스트 출력 → JSON 변환 파서 |
-| `tools/push_metrics.py` | JSON → InfluxDB/Prometheus 메트릭 전송 유틸리티 |
-| `grafana/` | InfluxDB 데이터소스 및 대시보드 프로비저닝 설정 |
-| `docker-compose.yml` | 로컬 시각화를 위한 InfluxDB + Grafana 컨테이너 |
+| `example_project/inc/` | 도메인별 구조체 헤더 정의 (`example_node.h`, `example_events.h`, 등) |
+| `example_project/src/` | 소스 코드 및 `main.cpp` (셀 셋업 동적 할당 시뮬레이션 포함) |
+| `tools/memory_analyzer/` | **핵심 프로파일러 도구 모음** |
+| `├── auto_scan.sh` | 헤더에서 구조체/클래스명을 스캔하는 스크립트 |
+| `├── analyze_struct.py` | 정적 DWARF 구조체 레이아웃 및 낭비 오프셋 분석기 |
+| `├── heap_tracker.py` | 런타임 malloc/operator new 후킹 및 구조체 매칭 추적기 |
+| `├── cell_trace.gdb.in` | 로컬 힙 매핑용 GDB 템플릿 |
+| `└── remote_trace.gdb.in` | 이기종 원격 서버 자동 아키텍처 인지 디버깅용 GDB 템플릿 |
+| `archive/` | 기존 `pahole` 및 대시보드(React/Vite) 백업 아카이브 |
 
-## Requirements
+---
 
-```bash
-sudo apt install dwarves       # pahole
-sudo apt install cmake         # CMake 3.10+
-g++ --version                  # GCC (with -g support)
-python3 --version              # 3.10+
-```
-
-## Usage
+## 🛠️ Requirements
 
 ```bash
-cd example_project/build
-
-# 전체 구조체 분석 (src 하위 모든 오브젝트 파일 대상)
-pahole CMakeFiles/memory_profile_example.dir/src/*.o | python3 ../tools/parse_pahole.py
-
-# 특정 구조체만 분석
-pahole -C ExampleComplexRecord CMakeFiles/memory_profile_example.dir/src/*.o | python3 ../tools/parse_pahole.py
-
-# 파일 입력
-pahole CMakeFiles/memory_profile_example.dir/src/*.o > pahole_output.txt
-python3 ../tools/parse_pahole.py pahole_output.txt
-
-# JSON 결과 저장
-pahole CMakeFiles/memory_profile_example.dir/src/*.o | python3 ../../tools/parse_pahole.py > report.json 2>summary.log
+sudo apt update
+sudo apt install -y gdb             # 로컬 GDB 디버거
+sudo apt install -y gdb-multiarch   # (선택) ARM Grace-C1 등 이기종 원격 디버깅 시 필요
+sudo apt install -y cmake build-essential
 ```
 
-## CI Integration
+---
 
-### Jenkins
+## 🚀 Quick Start (Local)
 
-```groovy
-stage('Memory Profile') {
-    steps {
-        sh 'cd example_project && mkdir build && cd build && cmake .. && make'
-        sh 'pahole example_project/build/CMakeFiles/my_project.dir/src/*.o | python3 tools/parse_pahole.py > memory_report.json'
-        archiveArtifacts 'memory_report.json'
-    }
-}
-```
-
-### GitLab CI
-
-```yaml
-memory-profile:
-  stage: analysis
-  script:
-    - cd example_project && mkdir build && cd build && cmake .. && make
-    - cd ../..
-    - pahole example_project/build/CMakeFiles/my_project.dir/src/*.o | python3 tools/parse_pahole.py > memory_report.json
-  artifacts:
-    paths: [memory_report.json]
-```
-
-## Grafana Dashboard Integration
-
-`tools/push_metrics.py`와 제공되는 `docker-compose.yml`을 활용하여 분석 결과를 시각화할 수 있습니다.
-
-> **Note**: 리눅스 환경에서 권한 문제가 발생할 경우 `docker-compose` 앞에 `sudo`를 붙이거나 사용자를 `docker` 그룹에 추가하세요.
-
+### 1. CMake 빌드 환경 설정
 ```bash
-# 1. 인프라 실행 (권한 필요 시 sudo 추가)
-sudo docker-compose up -d
-# (주의: 최초 실행 시 DB 초기화에 시간이 소요될 수 있습니다. 'Connection reset' 에러 발생 시 잠시 후 다음 단계를 다시 실행하세요.)
-
-# 2. 메트릭 추출 및 InfluxDB 전송
 cd example_project
-mkdir -p build && cd build && cmake .. && make
-pahole CMakeFiles/memory_profile_example.dir/src/*.o | python3 ../../tools/parse_pahole.py --project myproject --commit abc1234 | python3 ../../tools/push_metrics.py --backend influxdb
-
-# 3. 브라우저에서 대시보드 확인
-# 접속: http://localhost:3000 (ID/PW: admin)
-# "Memory Profile — Pahole Analysis" 대시보드 오픈
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Debug
+make -j$(nproc)
 ```
 
-## Example Patterns
+### 2. 정적 구조체 레이아웃 분석 (`make trace-static`)
+헤더의 모든 구조체를 DWARF 정보를 토대로 계층 트리로 시각화하고, 오프셋 별 홀(Hole)/패딩을 추출합니다.
+```bash
+make trace-static
+cat struct_report.txt
+```
 
-본 예제는 실무에서 흔히 발생하는 8가지 메모리 레이아웃 패턴을 다룹니다.
+### 3. 구조체 인식 동적 힙 추적 (`make trace-dynamic-detailed`)
+`malloc`과 `new`를 실시간 후킹하여, 셀 셋업 완료 시점마다 어떤 구조체가 어느 소스 라인에서 할당되었는지 추적합니다.
+```bash
+make trace-dynamic-detailed
+cat heap_alloc_report.txt
+```
+
+---
+
+## 🌐 Multi-Architecture Remote Profiling
+
+서버 사양(Grace-C1 ARM64, Sapphire Rapids x86_64 등)이 계속 확장될 때 코드를 수정하지 않고 환경 설정 파일(`.env.*`)을 변경하여 디버깅할 수 있습니다.
+
+### 1. 환경 설정 프로필 설정
+로컬 루트 디렉토리에 정의된 각 서버의 환경 파일을 불러옵니다:
+* 로컬/기본: `.env`
+* Sapphire Rapids (x86): `.env.sapphirerapids`
+* Grace-C1 (ARM64): `.env.grace-c1`
+
+```bash
+# Grace-C1 ARM64 서버 프로필로 빌드 환경 설정
+cd example_project/build
+cmake .. -DENV_FILE=../../.env.grace-c1
+make show-profile
+```
+
+### 2. 원격 타겟 디버깅 실행
+원격 타겟 서버에서 `gdbserver`를 구동합니다:
+```bash
+# (원격 서버 측)
+gdbserver :9999 /opt/vran/bin/vran_main
+```
+
+로컬 빌드 디렉토리에서 원격 추적을 가동합니다:
+```bash
+# (로컬 서버 측)
+make trace-dynamic-remote
+```
+GDB의 `set architecture auto` 속성에 의해 이기종 아키텍처(x86_64 → ARM64) 및 확장 명령어셋 정보가 원격 장비로부터 동적 인지되어 정상 동작합니다.
+
+---
+
+## 💡 Example Struct Patterns
+
+본 예제는 실무 vRAN 개발 시 최적화가 빈번한 11가지 메모리 레이아웃 패턴을 포함하고 있습니다:
 
 | # | Pattern | Struct | Description |
 |---|---------|--------|-------------|
