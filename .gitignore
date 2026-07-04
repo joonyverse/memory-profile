@@ -1,0 +1,21 @@
+# CMake build directories
+example_project/build/
+
+# Local raw outputs/dumps
+pahole_out.txt
+parsed_out.json
+complex_layout.json
+dashboard_api.json
+test_influx.cjs
+
+# Scratch files / temporary python scripts
+*.pyc
+__pycache__/
+test_regex.py
+fix_final.py
+fix_panel6.py
+
+# Editor files
+.vscode/
+.idea/
+.DS_Store
